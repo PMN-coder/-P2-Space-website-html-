@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Earth Sim | Neutral Space</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Syne:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background-color: #03050d;
+    font-family: 'Syne', sans-serif;
+    color: #eef4ff;
+  }
+  #ui-layer {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+  }
+  .back-btn {
+    text-decoration: none;
+    color: #5aaeff;
+    border: 1px solid rgba(90,174,255,0.4);
+    padding: 10px 20px;
+    border-radius: 8px;
+    background: rgba(10,16,38,0.7);
+    backdrop-filter: blur(10px);
+    font-weight: 600;
+    transition: all 0.3s;
+    display: inline-block;
+    margin-bottom: 20px;
+  }
+  .back-btn:hover {
+    background: rgba(90,174,255,0.15);
+    border-color: #5aaeff;
+  }
+  .hud {
+    background: rgba(10,16,38,0.7);
+    border: 1px solid rgba(90,174,255,0.18);
+    backdrop-filter: blur(10px);
+    padding: 20px;
+    border-radius: 12px;
+    max-width: 300px;
+  }
+  h1 { font-family: 'Orbitron', sans-serif; font-size: 1.2rem; margin: 0 0 10px 0; color: #00d4ff; }
+  p { margin: 0; font-size: 0.9rem; color: #8a9dc4; line-height: 1.5; }
+  #loading {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    font-family: 'Orbitron', sans-serif; font-size: 1.2rem; color: #00d4ff; animation: pulse 1.5s infinite;
+    z-index: 5;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+</style>
+</head>
+<body>
+
+<div id="ui-layer">
+  <a href="index.html" class="back-btn">← Mission Control</a>
+  <div class="hud">
+    <h1>Orbital Telemetry</h1>
+    <p>Live simulation of Earth and Neutral Space satellite constellations. Topography via NASA.</p>
+  </div>
+</div>
+
+<div id="loading">ASSEMBLING PLANETARY DATA...</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+<script>
+  // 1. Setup Scene, Camera, and Renderer
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x03050d, 0.001);
+
+  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera.position.z = 15;
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  // Important for photorealistic models to render colors correctly:
+  renderer.outputEncoding = THREE.sRGBEncoding; 
+  document.body.appendChild(renderer.domElement);
+
+  // 2. Controls
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  controls.minDistance = 6;
+  controls.maxDistance = 30;
+
+  // 3. Lighting (Tuned for the NASA model)
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); 
+  scene.add(ambientLight);
+
+  const sunLight = new THREE.DirectionalLight(0xffffff, 2.0); 
+  sunLight.position.set(10, 5, 10);
+  scene.add(sunLight);
+
+  const backLight = new THREE.DirectionalLight(0x5aaeff, 0.3); 
+  backLight.position.set(-10, -5, -10);
+  scene.add(backLight);
+
+  // 4. Load NASA Earth Model LOCALLY
+  let earthGroup = new THREE.Group(); 
+  scene.add(earthGroup);
+
+  const loader = new THREE.GLTFLoader();
+  
+  // Loading the file you downloaded and saved to your folder
+  loader.load(
+    'nasa-earth.glb', 
+    function (gltf) {
+      document.getElementById('loading').style.display = 'none';
+
+      const earthModel = gltf.scene;
+
+      // NASA models are usually properly centered, but we'll scale it to fit our scene
+      const initialBox = new THREE.Box3().setFromObject(earthModel);
+      const size = initialBox.getSize(new THREE.Vector3());
+      
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const targetDiameter = 7.5; 
+      const scale = targetDiameter / maxDim;
+      earthModel.scale.set(scale, scale, scale);
+
+      // Center it just in case
+      const scaledBox = new THREE.Box3().setFromObject(earthModel);
+      const center = scaledBox.getCenter(new THREE.Vector3());
+      earthModel.position.x = -center.x;
+      earthModel.position.y = -center.y;
+      earthModel.position.z = -center.z;
+
+      earthGroup.add(earthModel);
+    },
+    undefined,
+    function (error) {
+      console.error('Error loading nasa-earth.glb', error);
+      document.getElementById('loading').innerText = "ERROR: COULD NOT FIND nasa-earth.glb";
+    }
+  );
+
+  // 5. Create Satellites Constellation
+  const satelliteGroup = new THREE.Group();
+  scene.add(satelliteGroup);
+
+  const numSatellites = 30;
+  for (let i = 0; i < numSatellites; i++) {
+    const satGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+    const satMaterial = new THREE.MeshBasicMaterial({ color: 0x00d4ff });
+    const satellite = new THREE.Mesh(satGeometry, satMaterial);
+
+    const distance = 4.5 + Math.random() * 2;
+    const angle1 = Math.random() * Math.PI * 2;
+    const angle2 = Math.random() * Math.PI * 2;
+
+    satellite.position.x = distance * Math.cos(angle1) * Math.sin(angle2);
+    satellite.position.y = distance * Math.sin(angle1) * Math.sin(angle2);
+    satellite.position.z = distance * Math.cos(angle2);
+
+    satellite.userData = {
+      speed: 0.002 + Math.random() * 0.005,
+      axis: new THREE.Vector3(Math.random(), Math.random(), Math.random()).normalize()
+    };
+
+    satelliteGroup.add(satellite);
+  }
+
+  // 6. Background Stars
+  const starsGeo = new THREE.BufferGeometry();
+  const starsCount = 1000;
+  const posArray = new Float32Array(starsCount * 3);
+  for(let i = 0; i < starsCount * 3; i++) {
+    posArray[i] = (Math.random() - 0.5) * 100;
+  }
+  starsGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+  const starsMat = new THREE.PointsMaterial({ size: 0.1, color: 0x8a9dc4 });
+  const starsMesh = new THREE.Points(starsGeo, starsMat);
+  scene.add(starsMesh);
+
+  // 7. Animation Loop
+  function animate() {
+    requestAnimationFrame(animate);
+
+    earthGroup.rotation.y += 0.0005;
+    starsMesh.rotation.y += 0.0001;
+
+    satelliteGroup.children.forEach(sat => {
+      sat.position.applyAxisAngle(sat.userData.axis, sat.userData.speed);
+    });
+
+    controls.update();
+    renderer.render(scene, camera);
+  }
+
+  animate();
+
+  // 8. Handle Window Resize
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+</script>
+
+</body>
+</html>
